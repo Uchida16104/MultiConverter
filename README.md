@@ -57,7 +57,7 @@ MultiConverter
 
 ## ⚙️ ️ Local Development (Included XAMPP on Your Local Environment)
 
-1. Clone this repository: ```https://github.com/Uchida16104/MultiConverter.git```
+1. Clone this repository: ```git clone https://github.com/Uchida16104/MultiConverter.git```
 2. Go to cloned directory: ```cd MultiConverter```
 3. Install dependencies: ```npm install```
 4. Start development server: ```npm run dev```
