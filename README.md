@@ -57,11 +57,13 @@ MultiConverter
 
 ## ⚙️ ️ Local Development (Included XAMPP on Your Local Environment)
 
-1. Install dependencies: ```npm install```
-2. Start development server: ```npm run dev```
-3. Open http://localhost:5173 in your browser. [Pseudo Preview1](https://multiconverter.onrender.com) [Pseudo Preview2](https://multi-converter-five.vercel.app)
-4. Build for production: ```npm run build```
-5. View build output: [After/HTMX/index.htmx.html](After/HTMX/index.htmx.html)
+1. Clone this repository: ```https://github.com/Uchida16104/MultiConverter.git```
+2. Go to cloned directory: ```cd MultiConverter```
+3. Install dependencies: ```npm install```
+4. Start development server: ```npm run dev```
+5. Open http://localhost:5173 in your browser. [Pseudo Preview1](https://multiconverter.onrender.com) [Pseudo Preview2](https://multi-converter-five.vercel.app)
+6. Build for production: ```npm run build```
+7. View build output: [After/HTMX/index.htmx.html](After/HTMX/index.htmx.html)
 
 ---
 **Information on: *2025***  
