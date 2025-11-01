@@ -10,13 +10,13 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Setup
-        run: pwd && ls && chmod 777 ./setup.sh && bash ./setup.sh
-        
       - name: Checkout
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+
+      - name: Setup
+        run: chmod 777 ./setup.sh && bash ./setup.sh
       
       - name: Setup Node
         uses: actions/setup-node@v4
