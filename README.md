@@ -85,7 +85,7 @@ npm run build
 ```
 
 7. View build output: 
-[After/HTMX/index.htmx.html](After/HTMX/index.htmx.html)
+[After/HTMX/index.htmx.html](/HTMX/index.htmx.html)
 
 ---
 **Information on: *2025***  
