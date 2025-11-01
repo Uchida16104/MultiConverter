@@ -10,6 +10,9 @@ jobs:
     runs-on: macos-latest
 
     steps:
+      - name: Setup
+        run: chmod 777 setup.sh && bash setup.sh
+        
       - name: Checkout
         uses: actions/checkout@v4
         with:
