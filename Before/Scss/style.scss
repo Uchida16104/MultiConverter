@@ -1,0 +1,8 @@
+$color: #3490dc;
+$invert: #cb6f23;
+a {
+  color: $color;
+  &:hover {
+    color: $invert;
+  }
+}
