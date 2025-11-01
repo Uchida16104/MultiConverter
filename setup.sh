@@ -75,9 +75,9 @@ print_banner() {
     cat << "EOF"
 ╔═══════════════════════════════════════════════════════════╗
 ║                                                           ║
-║           MultiConverter Setup Script v2.0.0             ║
+║           MultiConverter Setup Script                     ║
 ║                                                           ║
-║   Universal Environment Configuration & Validation       ║
+║   Universal Environment Configuration & Validation        ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
 EOF
