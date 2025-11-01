@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - name: Setup
-        run: pwd && chmod 777 ./setup.sh && bash ./setup.sh
+        run: pwd && ls && chmod 777 ./setup.sh && bash ./setup.sh
         
       - name: Checkout
         uses: actions/checkout@v4
