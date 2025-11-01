@@ -77,7 +77,8 @@ npm install
 npm run dev
 ```
 
-5. Open http://localhost:5173 in your browser. [Pseudo Preview1](https://multiconverter.onrender.com) [Pseudo Preview2](https://multi-converter-five.vercel.app)
+5. Open http://localhost:5173 in your browser: 
+ [Pseudo Preview1](https://multiconverter.onrender.com) [Pseudo Preview2](https://multi-converter-five.vercel.app)
 
 6. Build for production: 
 ```markdown
