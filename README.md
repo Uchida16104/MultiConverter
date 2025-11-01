@@ -82,7 +82,7 @@ git clone https://github.com/Uchida16104/MultiConverter.git
 cd MultiConverter
 ```
 
-3. Run ShellScript file 
+3. Run ShellScript file ***(Optional)***
 * macOS & Linux 
 ```markdown
 chmod 777 ./setup.sh && bash ./setup.sh
