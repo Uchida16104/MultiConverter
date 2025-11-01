@@ -5,6 +5,21 @@ HTMX will load external dynamic content from PHP, Hack or Laravel.
 
 MultiConverter is a hybrid compilation and build pipeline that converts multiple web technologies (PHP, Laravel, Hack, TypeScript, SQL, Scss, Sass, Less) into unified outputs for HTMX, JavaScript, Tailwind CSS, and CSS — fully automated with Node.js and Vite.
 
+## Requirement
+
+* PHP
+* Laravel(Blade)
+* Hack(HHVM)
+* HTMX
+* phptojs
+* sql.js
+* TypeScript
+* Less
+* Scss
+* Sass
+* Less
+* XAMPP
+
 ## 🧠 Technologies Used
 
 ```markdown
@@ -67,25 +82,34 @@ git clone https://github.com/Uchida16104/MultiConverter.git
 cd MultiConverter
 ```
 
-3. Install dependencies: 
+3. Run ShellScript file 
+* macOS & Linux 
+```markdown
+chmod 777 ./setup.sh && bash ./setup.sh
+``` 
+* Windows (Recommend [Git Bash](https://git-scm.com)) 
+```markdown
+chmod 777 ./setup.sh && ./setup.sh
+``` 
+4. Install dependencies: 
 ```markdown
 npm install
 ```
 
-4. Start development server: 
+5. Start development server: 
 ```markdown
 npm run dev
 ```
 
-5. Open http://localhost:5173 in your browser: 
+6. Open http://localhost:5173 in your browser: 
  [Pseudo Preview1](https://multiconverter.onrender.com) [Pseudo Preview2](https://multi-converter-five.vercel.app)
 
-6. Build for production: 
+7. Build for production: 
 ```markdown
 npm run build
 ```
 
-7. View build output: 
+8. View build output: 
 [After/HTMX/index.htmx.html](https://uchida16104.github.io/MultiConverter/HTMX/index.htmx.html)
 
 ---
