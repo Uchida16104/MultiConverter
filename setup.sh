@@ -135,8 +135,8 @@ case "$PKG_MANAGER" in
   apk) install_pkg git curl wget build-base ca-certificates ;;
   brew) install_pkg git curl wget ;;
   pkg) install_pkg git curl wget proot-distro ;;
-  zypper) install_pkg git curl wget gcc make ;
-  emerge) install_pkg git net-misc/curl net-misc/wget sys-devel/gcc ;
+  zypper) install_pkg git curl wget gcc make ;;
+  emerge) install_pkg git net-misc/curl net-misc/wget sys-devel/gcc ;;
   *) echo "Please ensure git, curl and wget are installed manually." ;;
 esac || true
 
