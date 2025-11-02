@@ -25,11 +25,6 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Setup environment (bash setup.sh)
-        run: |
-          chmod 777 ./setup.sh
-          bash ./setup.sh
-
       - name: Install Composer dependencies
         run: composer install --no-interaction --no-progress --prefer-dist
 
