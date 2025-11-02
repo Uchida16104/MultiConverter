@@ -10,28 +10,46 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: Setup
-        run: chmod 777 ./setup.sh && bash ./setup.sh
-      
-      - name: Setup Node
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: '20'
 
-      - name: Install dependencies
-        run: npm install
+      - name: Setup environment (bash setup.sh)
+        run: |
+          chmod 777 ./setup.sh
+          bash ./setup.sh
 
-      - name: Build files
-        run: npm run build
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
 
-      - name: Deploy to gh-pages
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Prepare build (Composer scripts)
+        run: composer run-script ci:prepare
+
+      - name: Build project (Vite + phptojs + TS + Tailwind)
+        run: |
+          npx --yes @vite/cli build || npm run build
+
+      - name: Deploy to GitHub Pages (gh-pages branch)
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
           publish_dir: ./After
+          allow_empty_commit: false
+          keep_files: false
+          force_orphan: false
+          enable_jekyll: false
