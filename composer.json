@@ -1,0 +1,95 @@
+{
+  "name": "uchida16104/multiconverter",
+  "description": "MultiConverter — convert PHP/Laravel/Hack/TS/SQL/SCSS/Less into HTMX/JS/Tailwind CSS via Node/Vite/phptojs/sql.js",
+  "type": "project",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Hirotoshi Uchida",
+      "email": "uho02741358@gmail.com"
+    }
+  ],
+  "require": {
+    "php": "^7.4 || ^8.0 || ^8.1",
+    "ext-json": "*",
+    "ext-pdo": "*",
+    "ext-ctype": "*",
+    "ext-curl": "*"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^9.6 || ^10.0",
+    "friendsofphp/php-cs-fixer": "^3.0"
+  },
+  "config": {
+    "platform": {
+      "php": "8.0.0"
+    },
+    "sort-packages": true,
+    "optimize-autoloader": true
+  },
+  "autoload": {
+    "psr-4": {
+      "MultiConverter\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "MultiConverter\\Tests\\": "tests/"
+    }
+  },
+  "scripts": {
+    "post-root-package-install": [
+      "@symfony-scripts-ensure-node"
+    ],
+    "symfony-scripts-ensure-node": [
+      "php -r \"file_exists('package.json') || copy('package.json.dist','package.json');\""
+    ],
+    "setup": [
+      "bash setup.sh"
+    ],
+    "npm-install": [
+      "npm install --no-audit --no-fund"
+    ],
+    "phptojs": [
+      "npx phptojs ./Before --out-dir ./After/JavaScript || true"
+    ],
+    "ts-compile": [
+      "npx tsc --project tsconfig.json || true"
+    ],
+    "sql-wasm-prepare": [
+      "node build.js --prepare-sqljs || true"
+    ],
+    "build:node": [
+      "npm run build"
+    ],
+    "build": [
+      "@phptojs",
+      "@ts-compile",
+      "@sql-wasm-prepare",
+      "@build:node"
+    ],
+    "dev": [
+      "npm run dev"
+    ],
+    "clean": [
+      "rm -rf ./dist ./After || true"
+    ],
+    "test": [
+      "phpunit --configuration phpunit.xml"
+    ],
+    "ci:prepare": [
+      "@npm-install",
+      "@build"
+    ]
+  },
+  "extra": {
+    "hhvm": {
+      "compatible": true
+    },
+    "branch-alias": {
+      "dev-main": "1.0.x-dev"
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}
