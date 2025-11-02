@@ -1,362 +1,405 @@
 #!/usr/bin/env bash
-# setup.sh
+# MultiConverter universal setup script
+# - Clones/downloads repo using git or curl/wget
+# - Installs required tools where possible (Node, npm, PHP, Composer, TypeScript, tailwind, sql.js, sass, less)
+# - Creates minimal composer.json if missing
+# - Installs npm & composer dependencies
+# - Runs `npm run dev`
 #
-# Purpose: Cross-platform bootstrapper and analyzer for the GitHub repository
-# https://github.com/Uchida16104/MultiConverter/tree/main
-#
-# What this script does (best-effort, idempotent):
-# 1. Detect host platform (macOS, many Linux distros, Windows (WSL/Cygwin), Android/Termux).
-# 2. Install or ensure presence of developer packages required to run a typical
-#    modern JavaScript/Vite project with `npm run dev` (Node.js LTS, npm, git,
-#    build tools, Python where needed for native modules, make, gcc/clang, etc.).
-# 3. Optionally generate CI/hosting helper files for GitHub Actions (GitHub Pages),
-#    Vercel and Render.com minimal configuration to deploy the repo's build.
-# 4. Perform a static inspection of the repository (file list, package.json analysis),
-#    then run `npm ci` or `npm install` and start the dev server with `npm run dev`.
-#
-# Limitations / Important notes (please read):
-# - This script is intentionally conservative and attempts to avoid destructive operations.
-# - It cannot magically fix every environment-specific failure (hardware, locked package
-#   managers, corporate proxies, missing privileges). It makes best-effort installs.
-# - On Windows native, this script is written for environments that provide a Unix shell
-#   (Git Bash, MSYS2, WSL). Native PowerShell/Command Prompt support is limited.
-# - For Android, Termux is required; this script will attempt Termux package installs.
-# - Some systems (Gentoo, NixOS, Fedora Silverblue, immutable OSes) require manual
-#   admin steps; this script will print instructions when automation is not possible.
-#
-# USAGE:
-#  1) Place this script at the root of the cloned repo (MultiConverter).
-#  2) Make executable: chmod +x setup.sh
-#  3) Run as a user with sudo privileges when installation is required:
-#       sudo ./setup.sh
-#     (or run without sudo to perform analysis + local npm steps if system already has tools)
-#
-# Exit on any error so failures are obvious
+# Run as: chmod +x setup.sh && sudo ./setup.sh
+# (script will detect if sudo is needed; you may run it from a non-root account if your system allows sudo)
+
 set -euo pipefail
 IFS=$'\n\t'
 
-REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
-NODE_MIN_VERSION_MAJOR=18
-NPM_MIN_VERSION=8
-SCRIPT_NAME=$(basename "$0")
+REPO_URL="https://github.com/Uchida16104/MultiConverter"
+REPO_ZIP_URL="$REPO_URL/archive/refs/heads/main.zip"
+REPO_DIR="MultiConverter"
+LOGFILE="./multiconverter-setup.log"
 
-log(){ echo "[INFO] $*"; }
-err(){ echo "[ERROR] $*" >&2; }
-warn(){ echo "[WARN] $*" >&2; }
+echo "=== MultiConverter Universal Setup ==="
+echo "Logging to $LOGFILE"
+exec > >(tee -a "$LOGFILE") 2>&1
 
-require_cmd(){ command -v "$1" >/dev/null 2>&1 || { err "command '$1' not found"; return 1; } }
+# --- utilities ---
+function hint_run_as_root() {
+  echo ""
+  echo "NOTE: this script will ask for sudo when needed. If you prefer to run part-by-part, do so manually."
+  echo ""
+}
 
-# --- Platform detection ---
-OS_TYPE="unknown"
-if [[ "$OSTYPE" == darwin* ]]; then
-  OS_TYPE="macos"
-elif grep -qi microsoft /proc/version 2>/dev/null || grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
-  OS_TYPE="wsl"
-elif [[ "$(uname -s)" == Linux* ]]; then
-  # check distro
-  if [ -f /etc/os-release ]; then
+function command_exists() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+function require_cmd() {
+  if ! command_exists "$1"; then
+    echo "Error: required command '$1' not found. Please install it and re-run the script."
+    exit 1
+  fi
+}
+
+# --- detect OS & package manager ---
+PKG_MANAGER=""
+OS_ID=""
+function detect_os() {
+  echo "Detecting OS and available package manager..."
+  if [ "$(uname -s)" = "Darwin" ]; then
+    OS_ID="macos"
+    if command_exists brew; then
+      PKG_MANAGER="brew"
+    else
+      PKG_MANAGER=""
+    fi
+  elif [ -f /etc/os-release ]; then
     . /etc/os-release
-    ID_LC=${ID,,}
-    case "$ID_LC" in
-      ubuntu|debian|linuxmint)
-        OS_TYPE="debian"
-        ;;
-      fedora)
-        OS_TYPE="fedora"
-        ;;
-      centos|rhel)
-        OS_TYPE="centos"
-        ;;
-      gentoo)
-        OS_TYPE="gentoo"
-        ;;
-      arch|manjaro)
-        OS_TYPE="arch"
-        ;;
-      alpine)
-        OS_TYPE="alpine"
-        ;;
-      *)
-        OS_TYPE="linux"
-        ;;
-    esac
+    OS_ID="${ID:-unknown}"
+    if command_exists apt-get; then
+      PKG_MANAGER="apt"
+    elif command_exists dnf; then
+      PKG_MANAGER="dnf"
+    elif command_exists yum; then
+      PKG_MANAGER="yum"
+    elif command_exists pacman; then
+      PKG_MANAGER="pacman"
+    elif command_exists zypper; then
+      PKG_MANAGER="zypper"
+    elif command_exists apk; then
+      PKG_MANAGER="apk"
+    elif command_exists emerge; then
+      PKG_MANAGER="emerge"
+    else
+      PKG_MANAGER=""
+    fi
+  elif [ -n "${TERMUX_VERSION:-}" ]; then
+    OS_ID="termux"
+    PKG_MANAGER="pkg"
   else
-    OS_TYPE="linux"
+    OS_ID="$(uname -s)-unknown"
+    PKG_MANAGER=""
   fi
-elif [[ "$OSTYPE" == cygwin* || "$OSTYPE" == msys* ]]; then
-  OS_TYPE="windows"   # Git Bash / MSYS
-elif [[ "$OSTYPE" == android* ]]; then
-  OS_TYPE="termux"
-else
-  OS_TYPE="unknown"
-fi
-log "Detected platform: $OS_TYPE"
-
-# --- Helper installers per distro ---
-apt_install(){
-  sudo apt-get update -y && sudo apt-get install -y "$@"
+  echo "Detected OS: $OS_ID, package manager: $PKG_MANAGER"
 }
+detect_os
 
-dnf_install(){
-  sudo dnf install -y "$@"
-}
-
-yum_install(){
-  sudo yum install -y "$@"
-}
-
-pacman_install(){
-  sudo pacman -Sy --noconfirm "$@"
-}
-
-apk_install(){
-  sudo apk add --no-cache "$@"
-}
-
-emerge_install(){
-  sudo emerge --ask "$@"
-}
-
-choco_install(){
-  if command -v choco >/dev/null 2>&1; then
-    choco install -y "$@"
-  else
-    warn "choco not found. Skipping choco install."
-  fi
-}
-
-winget_install(){
-  if command -v winget >/dev/null 2>&1; then
-    winget install --id "$1" --silent || warn "winget failed for $1"
-  else
-    warn "winget not found. Skipping winget install."
-  fi
-}
-
-# --- Ensure essential build tools ---
-install_build_tools(){
-  log "Installing essential build tools for $OS_TYPE"
-  case "$OS_TYPE" in
-    debian|wsl)
-      apt_install build-essential git curl ca-certificates gnupg lsb-release python3 python3-pip
+# --- install helpers for different package managers ---
+function install_pkg() {
+  # install packages list passed as parameters
+  local pkgs=("$@")
+  echo "--- Installing packages: ${pkgs[*]} ---"
+  case "$PKG_MANAGER" in
+    apt)
+      sudo apt-get update -y
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${pkgs[@]}"
       ;;
-    fedora)
-      dnf_install @development-tools git curl ca-certificates python3 python3-pip
+    dnf)
+      sudo dnf install -y "${pkgs[@]}"
       ;;
-    centos)
-      yum_install gcc gcc-c++ make git curl python3 python3-pip
+    yum)
+      sudo yum install -y "${pkgs[@]}"
       ;;
-    arch)
-      pacman_install base-devel git curl python python-pip
+    pacman)
+      sudo pacman -Sy --noconfirm "${pkgs[@]}"
       ;;
-    alpine)
-      apk_install build-base git curl python3 py3-pip
+    apk)
+      sudo apk add --no-cache "${pkgs[@]}"
       ;;
-    gentoo)
-      emerge_install sys-devel/gcc net-misc/curl dev-vcs/git >=dev-lang/python-3
+    zypper)
+      sudo zypper --non-interactive install "${pkgs[@]}"
       ;;
-    macos)
-      if ! command -v brew >/dev/null 2>&1; then
-        log "Homebrew not detected. Installing Homebrew (non-interactive)."
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
-      fi
-      brew update || true
-      brew install git curl python node || true
+    brew)
+      for p in "${pkgs[@]}"; do
+        brew list "$p" >/dev/null 2>&1 || brew install "$p"
+      done
       ;;
-    termux)
-      pkg update -y || true
-      pkg install -y git curl clang python nodejs build-essential openssl
+    pkg) # Termux
+      pkg install -y "${pkgs[@]}"
       ;;
-    windows)
-      warn "For native Windows please install Git for Windows, Node.js (LTS), and a MSYS2/MinGW or WSL environment. Attempting choco/winget if present."
-      choco_install git
+    emerge)
+      sudo emerge --ask "${pkgs[@]}"
       ;;
     *)
-      warn "Unknown Linux variant: try installing build-essential, git, curl, python3 and node manually."
+      echo "No known package manager detected; please install these packages manually: ${pkgs[*]}"
+      return 1
       ;;
   esac
 }
 
-# --- Node.js and npm: use nvm for user install ---
-install_node_with_nvm(){
-  if command -v node >/dev/null 2>&1; then
-    NODE_VER=$(node -v | sed 's/v//')
-    log "Node present: v${NODE_VER}"
-  else
-    # Install NVM non-interactively
-    if [ -z "${NVM_DIR-}" ]; then
-      export NVM_DIR="$HOME/.nvm"
+# --- Ensure basic build tools ---
+echo "Ensuring basic dev tools (git, curl, wget, ca-certificates, build-essential where applicable)..."
+
+case "$PKG_MANAGER" in
+  apt) install_pkg git curl wget ca-certificates build-essential ;;
+  dnf|yum) install_pkg git curl wget ca-certificates make gcc gcc-c++ ;;
+  pacman) install_pkg git curl wget base-devel ca-certificates ;;
+  apk) install_pkg git curl wget build-base ca-certificates ;;
+  brew) install_pkg git curl wget ;;
+  pkg) install_pkg git curl wget proot-distro ;;
+  zypper) install_pkg git curl wget gcc make ;
+  emerge) install_pkg git net-misc/curl net-misc/wget sys-devel/gcc ;
+  *) echo "Please ensure git, curl and wget are installed manually." ;;
+esac || true
+
+# --- clone or download repo ---
+function get_repo() {
+  echo "Fetching repository..."
+  if command_exists git; then
+    if [ -d "$REPO_DIR" ]; then
+      echo "Directory $REPO_DIR exists. Attempting to git pull..."
+      (cd "$REPO_DIR" && git pull --ff-only) || true
+    else
+      git clone "$REPO_URL.git" "$REPO_DIR" || {
+        echo "git clone failed, will attempt to download zip via curl/wget..."
+        download_zip
+      }
     fi
-    if [ ! -d "$NVM_DIR" ]; then
-      log "Installing nvm"
-      curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash
-    fi
-    # shellcheck source=/dev/null
-    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-    nvm install --lts
-    nvm use --lts
-  fi
-
-  # ensure npm exists
-  if ! command -v npm >/dev/null 2>&1; then
-    err "npm not found after node install"
-    return 1
-  fi
-
-  # check versions
-  NPM_VER=$(npm -v || echo "0")
-  log "npm version: $NPM_VER"
-}
-
-# --- Global JS toolchain helpers ---
-install_global_js_tools(){
-  if command -v npm >/dev/null 2>&1; then
-    log "Ensuring pnpm and vite are available (global installs are optional)."
-    npm install -g pnpm@latest || true
-    npm install -g serve || true
-    # do NOT enforce global vite; projects should have devDependencies
-  fi
-}
-
-# --- Repo analysis ---
-analyze_repo(){
-  log "Analyzing repository structure in $REPO_ROOT"
-  pushd "$REPO_ROOT" >/dev/null
-  echo "--- top-level files ---"
-  ls -la | sed -n '1,200p'
-  echo "\n--- tree (up to depth 4) ---"
-  if command -v tree >/dev/null 2>&1; then
-    tree -L 4 || true
   else
-    find . -maxdepth 4 -print | sed -n '1,500p'
+    echo "git not available; downloading zip..."
+    download_zip
   fi
+}
 
-  # package.json inspection
-  if [ -f package.json ]; then
-    log "Found package.json — extracting scripts and dependencies"
-    cat package.json | sed -n '1,200p'
-    # show scripts quickly
-    node -e "const p=require('./package.json'); console.log('scripts:\n', p.scripts||{}); console.log('\ndependencies:\n', p.dependencies||{}); console.log('\ndevDependencies:\n', p.devDependencies||{});" || true
+function download_zip() {
+  if command_exists curl; then
+    curl -L -o main.zip "$REPO_ZIP_URL"
+  elif command_exists wget; then
+    wget -O main.zip "$REPO_ZIP_URL"
   else
-    warn "No package.json found at repo root — ensure you are at the correct path."
+    echo "Neither git, curl, nor wget are available to fetch the repo. Install one and retry."
+    exit 1
   fi
-  popd >/dev/null
+  # unzip extraction
+  if command_exists unzip; then
+    unzip -o main.zip
+  elif command_exists bsdtar; then
+    bsdtar -xf main.zip
+  else
+    echo "unzip not found. Attempting to use python to extract zip..."
+    python3 - <<PY
+import zipfile, sys
+with zipfile.ZipFile('main.zip','r') as z:
+    z.extractall()
+PY
+  fi
+  # extracted folder name likely MultiConverter-main
+  if [ -d "${REPO_DIR}-main" ]; then
+    mv -f "${REPO_DIR}-main" "$REPO_DIR"
+  fi
+  rm -f main.zip
 }
 
-# --- Create minimal GitHub Actions workflow for Pages (deploy) ---
-create_github_actions_workflow(){
-  WORKFLOW_DIR="$REPO_ROOT/.github/workflows"
-  mkdir -p "$WORKFLOW_DIR"
-  cat > "$WORKFLOW_DIR/deploy-gh-pages.yml" <<'YML'
-name: Deploy to GitHub Pages
-on:
-  push:
-    branches: [ main ]
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-      - run: npm ci
-      - run: npm run build
-      - name: Deploy
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
-YML
-  log "Created GitHub Actions workflow at $WORKFLOW_DIR/deploy-gh-pages.yml"
-}
+get_repo
 
-# --- Create Vercel configuration file ---
-create_vercel_conf(){
-  cat > "$REPO_ROOT/vercel.json" <<'JSON'
+cd "$REPO_DIR" || { echo "Cannot cd into $REPO_DIR"; exit 1; }
+echo "Now in $(pwd) -- repository contents:"
+ls -la
+
+# --- Create composer.json if missing ---
+if [ ! -f composer.json ]; then
+  echo "composer.json not found. Creating a minimal composer.json to allow composer install."
+  cat > composer.json <<'JSON'
 {
-  "version": 2,
-  "builds": [
-    { "src": "package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } }
-  ],
-  "routes": [
-    { "src": "/(.*)", "dest": "/index.html" }
-  ]
+  "name": "multiconverter/multiconverter",
+  "description": "Minimal composer.json created by setup script",
+  "type": "project",
+  "require": {
+    "php": ">=7.4"
+  },
+  "autoload": {
+    "psr-4": {
+      "MultiConverter\\": "src/"
+    }
+  }
 }
 JSON
-  log "Created vercel.json"
-}
+  echo "composer.json created."
+fi
 
-# --- Create Render service file (render.yaml) for static site ---
-create_render_conf(){
-  cat > "$REPO_ROOT/render.yaml" <<'YAML'
-# Minimal Render static site configuration (manual creation in Render dashboard may still be required)
-services:
-  - type: web
-    name: multiconverter
-    env: node
-    plan: free
-    buildCommand: npm ci && npm run build
-    startCommand: npm run serve
-    staticPublishPath: dist
-YAML
-  log "Created render.yaml"
-}
+# --- Install Node.js & npm if missing ---
+if ! command_exists node || ! command_exists npm; then
+  echo "Node.js/npm not found. Attempting to install Node.js and npm..."
+  case "$PKG_MANAGER" in
+    apt)
+      # Install NodeSource LTS and npm
+      curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+      sudo apt-get install -y nodejs
+      ;;
+    dnf)
+      curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash -
+      sudo dnf install -y nodejs
+      ;;
+    yum)
+      curl -fsSL https://rpm.nodesource.com/setup_lts.x | sudo bash -
+      sudo yum install -y nodejs
+      ;;
+    pacman)
+      sudo pacman -Sy --noconfirm nodejs npm
+      ;;
+    brew)
+      brew install node
+      ;;
+    apk)
+      sudo apk add --no-cache nodejs npm
+      ;;
+    pkg)
+      pkg install nodejs-lts
+      ;;
+    zypper)
+      sudo zypper install -y nodejs npm
+      ;;
+    *)
+      echo "Automatic Node.js installation not supported on this system by the script. Please install Node.js >= 16 and npm, then re-run."
+      ;;
+  esac
+fi
 
-# --- Run npm install and dev ---
-install_and_run_dev(){
-  pushd "$REPO_ROOT" >/dev/null
-  if [ -f package-lock.json ]; then
-    log "Using npm ci (package-lock.json present)"
-    npm ci || { warn "npm ci failed, attempting npm install"; npm install; }
+echo "Node version: $(node -v || true), npm version: $(npm -v || true)"
+
+# --- Install PHP & Composer if missing ---
+if ! command_exists php; then
+  echo "PHP not detected. Installing PHP..."
+  case "$PKG_MANAGER" in
+    apt) install_pkg php php-cli php-xml php-mbstring php-curl php-zip || true ;;
+    dnf|yum) install_pkg php php-cli php-xml php-mbstring php-curl php-zip || true ;;
+    pacman) install_pkg php php-apache php-intl || true ;;
+    apk) install_pkg php php-phar php-openssl php-json php-mbstring || true ;;
+    brew) brew install php ;;
+    pkg) pkg install php ;;
+    zypper) install_pkg php php-xml php-mbstring || true ;;
+    emergE) echo "Please install PHP manually on Gentoo (emerge dev-lang/php)." ;;
+    *) echo "Please install PHP (7.4+) manually." ;;
+  esac
+fi
+echo "PHP version: $(php -v | head -n1 || true)"
+
+if ! command_exists composer; then
+  echo "Composer not found. Installing composer (system-wide if possible)..."
+  if command_exists php; then
+    curl -sS https://getcomposer.org/installer -o composer-setup.php
+    php composer-setup.php --install-dir=/usr/local/bin --filename=composer || {
+      echo "Global install failed, installing locally."
+      php composer-setup.php --install-dir=.
+      mv composer.phar composer
+    }
+    rm -f composer-setup.php
   else
-    npm install || true
+    echo "php is required to install composer. Please install php and re-run."
   fi
+fi
+echo "Composer version: $(composer --version || true)"
 
-  # Ensure there's a dev script that starts Vite on port 5173 or default
-  if node -e "const p=require('./package.json'); console.log(p.scripts&&p.scripts.dev?1:0)" 2>/dev/null | grep -q 1; then
-    log "Found npm run dev script — starting it in background and piping logs to ./dev-server.log"
-    # try to start dev server in background; user may press Ctrl-C to stop
-    npm run dev -- --port 5173 > ./dev-server.log 2>&1 &
-    sleep 2
-    DEV_PID=$!
-    log "Started dev server (PID: $DEV_PID). Logs: $REPO_ROOT/dev-server.log"
-    # wait a few seconds and attempt to curl localhost:5173
-    sleep 3
-    if curl -sSf http://localhost:5173/ >/dev/null 2>&1; then
-      log "Dev server appears to be serving at http://localhost:5173"
+# --- Composer install if composer.json present ---
+if [ -f composer.json ]; then
+  echo "Running composer install (if vendor not present)..."
+  if [ -d vendor ]; then
+    echo "Vendor directory already exists; skipping composer install."
+  else
+    composer install --no-interaction --optimize-autoloader || echo "composer install returned non-zero status; please inspect output."
+  fi
+fi
+
+# --- Install global npm packages commonly required by this project ---
+echo "Installing common npm global packages (typescript, tsc, tailwindcss, vite, phptojs if available)..."
+# phptojs may or may not exist as an npm package; we will try to install it but ignore failure
+NPM_GLOBALS=(typescript tsc tailwindcss vite sql.js less sass postcss-cli)
+for pkg in "${NPM_GLOBALS[@]}"; do
+  if ! npm list -g --depth=0 "$pkg" >/dev/null 2>&1; then
+    echo "Attempting to npm install -g $pkg ..."
+    npm install -g "$pkg" || echo "npm global install for $pkg failed (OK if unavailable)."
+  else
+    echo "Global npm package $pkg already installed."
+  fi
+done
+
+# Try phptojs (best-effort)
+if ! npm list -g --depth=0 phptojs >/dev/null 2>&1; then
+  echo "Attempting to install phptojs (if available)..."
+  npm install -g phptojs || echo "phptojs global install failed or not available (non-fatal)."
+fi
+
+# Ensure node_modules can be installed: prefer npm ci if lockfile exists
+if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+  echo "Detected lockfile, running npm ci..."
+  npm ci || {
+    echo "npm ci failed; attempting npm install..."
+    npm install
+  }
+else
+  echo "No lockfile detected, running npm install..."
+  npm install || { echo "npm install failed. Inspect logs in $LOGFILE"; }
+fi
+
+# --- If repository has a setup.sh, run it (after making executable) ---
+if [ -f setup.sh ]; then
+  echo "Found repository-provided setup.sh. Making executable and running it..."
+  chmod +x setup.sh
+  # Run in a subshell to capture errors but don't stop entire script if it returns non-zero
+  if ! bash ./setup.sh; then
+    echo "Repository setup.sh returned non-zero. Continuing; check repository-specific setup."
+  fi
+fi
+
+# --- Build / run dev server ---
+echo "Starting dev server: npm run dev"
+# Try to start in background and wait to detect port 5173
+if npm run dev -- --port 5173 & then
+  DEV_PID=$!
+  echo "npm run dev started with PID $DEV_PID. Waiting briefly to detect server..."
+  sleep 4
+  # check server
+  if command_exists curl; then
+    if curl -sI http://localhost:5173 | head -n1 | grep -q "200\|302\|301"; then
+      echo "Dev server is up at http://localhost:5173"
     else
-      warn "Unable to confirm dev server on http://localhost:5173. Check $REPO_ROOT/dev-server.log"
+      echo "Dev server may not be serving 5173 or not yet ready. Check 'npm run dev' output above."
     fi
   else
-    warn "No npm dev script found. Please inspect package.json scripts."
+    echo "curl not available to check server. If server started you can open http://localhost:5173"
   fi
-  popd >/dev/null
-}
+else
+  echo "Failed to start npm run dev directly. Try running 'npm run dev' manually to see errors."
+fi
 
-# --- Main orchestration ---
-main(){
-  log "Beginning setup"
-  install_build_tools || warn "install_build_tools failed or partial"
+# --- Post-setup notes and recommendations ---
+echo ""
+echo "=== Setup script completed (or attempted) ==="
+echo "What I did:"
+echo "- Fetched the repository (git clone or ZIP download)"
+echo "- Ensured node/npm and PHP + composer (best effort) were present or attempted install"
+echo "- Created a minimal composer.json if none existed"
+echo "- Attempted global npm installs for typescript, tailwindcss, vite, sql.js, less, sass"
+echo "- Ran npm ci / npm install"
+echo "- Ran repository setup.sh (if present)"
+echo "- Attempted to run 'npm run dev' and detect http://localhost:5173"
 
-  # Node via nvm
-  install_node_with_nvm || warn "install_node_with_nvm encountered issues"
-  install_global_js_tools || warn "global js tools had issues"
+cat <<EOF
 
-  analyze_repo || warn "repo analysis had issues"
+Important caveats and manual follow-ups (read them):
 
-  # Create helpful CI config files
-  create_github_actions_workflow || warn "creating GH Actions workflow failed"
-  create_vercel_conf || warn "creating vercel.json failed"
-  create_render_conf || warn "creating render.yaml failed"
+1) HHVM / Hack: HHVM and Hack support is distro-specific and often not available or deprecated on many systems. If your project requires HHVM, please install it following official HHVM docs for your OS.
 
-  # Final npm install and run
-  install_and_run_dev || warn "install_and_run_dev encountered issues"
+2) XAMPP / MAMP / WAMP / LAMP:
+   - XAMPP/MAMP/WAMP are large bundles with GUI installers; this script does not run GUI installers.
+   - On Linux, LAMP stacks should be installed via the system package manager or packages like tasksel (Debian/Ubuntu).
+   - If you need XAMPP specifically, download from https://www.apachefriends.org and run the installer manually.
 
-  log "Setup finished. If the dev server is running, open http://localhost:5173 in your browser."
-  log "If something failed, inspect the log files and the printed warnings above."
-}
+3) Windows:
+   - This script is a POSIX/Bash script. For Windows, use Git Bash or WSL or convert steps to PowerShell.
+   - For Windows package installs, consider choco/winget instructions (not fully automated here).
 
-# Execute main
-main
+4) When package installs fail:
+   - Check the log at $LOGFILE for errors.
+   - Note that some distros require enabling extra repos (EPEL, etc.) before installing php extensions.
+
+5) If `npm run dev` fails with port or build errors:
+   - Run `npm run dev` manually and inspect terminal errors.
+   - Typical fixes: missing Node version, missing devDependencies, missing PHP tools (if build step converts PHP sources).
+
+EOF
+
+echo "Setup finished. If you want, I can now:"
+echo " - produce a Windows PowerShell version of this script,"
+echo " - produce minimal docker-compose + Dockerfile to guarantee a predictable environment,"
+echo " - or produce per-distro trimmed commands (Debian/Ubuntu, Fedora/CentOS, macOS) for manual execution."
+
+exit 0
